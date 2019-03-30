@@ -10,13 +10,17 @@ def train_model(model, tp, tn):
     model.train(ph, pr, pt, nh, nt)
 
 
-def test_model(model, triple):
-    h = [x[0] for x in triple]
-    r = [x[1] for x in triple]
-    t = [x[2] for x in triple]
+def test_model(model, triple, test_num=1000):
+    if test_num is None:
+        test_num = len(triple)
+    rand_idx = np.random.permutation(test_num)
+    test_triple = [triple[x] for x in rand_idx]
+    h = [x[0] for x in test_triple]
+    r = [x[1] for x in test_triple]
+    t = [x[2] for x in test_triple]
     batch_size = 512
-    num_step = int(len(triple) / batch_size)
-    if len(triple) > num_step * batch_size:
+    num_step = int(test_num / batch_size)
+    if test_num > num_step * batch_size:
         num_step += 1
     k_def = [1, 5, 10, 50]
     hits_k = [0.0 for _ in k_def]
@@ -43,7 +47,7 @@ def test_model(model, triple):
                 if rank_t <= k_def[k]:
                     hits_k[k] += 1
     for k in range(len(k_def)):
-        hits_k[k] = hits_k[k] / (len(triple) * 2)
-    mr = mr / (len(triple) * 2)
-    mrr = mrr / (len(triple) * 2)
+        hits_k[k] = hits_k[k] / (test_num * 2)
+    mr = mr / (test_num * 2)
+    mrr = mrr / (test_num * 2)
     print("hits@{}={}, MR={}, MRR={}".format(k_def, hits_k, mr, mrr))
