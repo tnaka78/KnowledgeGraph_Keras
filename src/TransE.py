@@ -15,7 +15,7 @@ class TransE:
     def embedding_relation(self):
         return self.__embedding_relation
 
-    def __init__(self, num_entity, num_relation, learning_rate, batch_size, num_epochs, margin, dimension):
+    def __init__(self, num_entity, num_relation, learning_rate, batch_size, num_epochs, margin, dimension, score_func):
         self.__num_entity = num_entity
         self.__num_relation = num_relation
         self.__learning_rate = learning_rate
@@ -26,13 +26,22 @@ class TransE:
 
         bound = 6 / math.sqrt(self.__dimension)
         self.__embedding_entity = K.layers.Embedding(self.__num_entity, self.__dimension, name='embedding_entity',
-                                                     embeddings_initializer=K.initializers.random_uniform(minval=-bound, maxval=bound))
+                                                     embeddings_initializer=K.initializers.random_uniform(minval=-bound, maxval=bound),
+                                                     embeddings_constraint=K.constraints.max_norm(max_value=1, axis=1))
         self.__embedding_relation = K.layers.Embedding(self.__num_relation, self.__dimension, name='embedding_relation',
-                                                       embeddings_initializer=K.initializers.random_uniform(minval=-bound, maxval=bound))
+                                                       embeddings_initializer=K.initializers.random_uniform(minval=-bound, maxval=bound),
+                                                       embeddings_constraint=K.constraints.max_norm(max_value=1, axis=1))
 
         self.__train_model = None
         self.__predict_model = None
         self.__test_model = None
+        if score_func == 'l1':
+            self.__score = K.layers.Lambda(lambda x: K.backend.sum(K.backend.abs(x[0] + x[1] - x[2]), axis=-1))
+        elif score_func == 'l2':
+            self.__score = K.layers.Lambda(lambda x: K.backend.sum(K.backend.square(x[0] + x[1] - x[2]), axis=-1))
+        else:
+            raise Exception('Invalid score_func value.')
+        self.__loss = K.layers.Lambda(lambda x: K.backend.maximum(x[0] + self.__margin - x[1], 0.0))
 
     def __compile_train_model(self):
         positive_head = K.Input((1,), dtype='int32', name='positive_heads')
@@ -49,9 +58,9 @@ class TransE:
 
         embedding_positive_triple = [embedding_positive_head, embedding_positive_relation, embedding_positive_tail]
         embedding_negative_triple = [embedding_negative_head, embedding_positive_relation, embedding_negative_tail]
-        score_positive = K.layers.Lambda(lambda x: K.backend.sum(K.backend.square(x[0] + x[1] - x[2]), axis=1)+1e-10)(embedding_positive_triple)
-        score_negative = K.layers.Lambda(lambda x: K.backend.sum(K.backend.square(x[0] + x[1] - x[2]), axis=1)+1e-10)(embedding_negative_triple)
-        loss = K.layers.Lambda(lambda x: K.backend.maximum(x[0] + self.__margin - x[1], 0.0))([score_positive, score_negative])
+        score_positive = self.__score(embedding_positive_triple)
+        score_negative = self.__score(embedding_negative_triple)
+        loss = self.__loss([score_positive, score_negative])
 
         self.__train_model = K.Model(inputs=[positive_head, positive_relation, positive_tail, negative_head, negative_tail], outputs=loss)
         opt = K.optimizers.Adam(lr=self.__learning_rate)
@@ -65,7 +74,7 @@ class TransE:
         embedding_tail = self.__embedding_entity(tail)
         embedding_relation = self.__embedding_relation(relation)
         embedding_triple = [embedding_head, embedding_relation, embedding_tail]
-        loss = K.layers.Lambda(lambda x: K.backend.sum(K.backend.square(x[0] + x[1] - x[2]), axis=1))(embedding_triple)
+        loss = self.__score(embedding_triple)
 
         self.__predict_model = K.Model(inputs=[head, relation, tail], outputs=loss)
         opt = K.optimizers.Adam(lr=self.__learning_rate)
@@ -79,7 +88,7 @@ class TransE:
         embedding_tail = self.__embedding_entity(tail)
         embedding_relation = self.__embedding_relation(relation)
         embedding_triple = [embedding_head, embedding_relation, embedding_tail]
-        loss = K.layers.Lambda(lambda x: K.backend.sum(K.backend.square(x[0] + x[1] - x[2]), axis=2))(embedding_triple)
+        loss = self.__score(embedding_triple)
 
         self.__test_model = K.Model(inputs=[head, relation, tail], outputs=loss)
         opt = K.optimizers.Adam(lr=self.__learning_rate)
@@ -132,11 +141,14 @@ if __name__ == '__main__':
     parser.add_argument('--margin', dest='margin', type=float, help='margin', default=1.0)
     parser.add_argument('--negative_sampling', dest='negative_sampling', type=str,
                         help='choose unit or bern to generate negative examples', default='bern')
+    parser.add_argument('--score_func', dest='score_func', type=str, default='l1',
+                        help='choose l1 or l2 to calculate distance of vectors')
     args = parser.parse_args()
     print(args)
     KG = KnowledgeGraph(data_dir=args.data_dir, negative_sampling=args.negative_sampling)
     model = TransE(num_entity=KG.num_entity, num_relation=KG.num_relation, learning_rate=args.learning_rate,
-                   batch_size=args.batch_size, num_epochs=args.num_epochs, margin=args.margin, dimension=args.dimension)
+                   batch_size=args.batch_size, num_epochs=args.num_epochs, margin=args.margin, dimension=args.dimension,
+                   score_func=args.score_func)
     model.compile()
     tp, tn = KG.get_training_data()
     train_model(model, tp, tn)
