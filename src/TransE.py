@@ -49,8 +49,8 @@ class TransE:
 
         embedding_positive_triple = [embedding_positive_head, embedding_positive_relation, embedding_positive_tail]
         embedding_negative_triple = [embedding_negative_head, embedding_positive_relation, embedding_negative_tail]
-        score_positive = K.layers.Lambda(lambda x: K.backend.sqrt(K.backend.sum(K.backend.square(x[0] + x[1] - x[2]), axis=1)+1e-10))(embedding_positive_triple)
-        score_negative = K.layers.Lambda(lambda x: K.backend.sqrt(K.backend.sum(K.backend.square(x[0] + x[1] - x[2]), axis=1)+1e-10))(embedding_negative_triple)
+        score_positive = K.layers.Lambda(lambda x: K.backend.sum(K.backend.square(x[0] + x[1] - x[2]), axis=1)+1e-10)(embedding_positive_triple)
+        score_negative = K.layers.Lambda(lambda x: K.backend.sum(K.backend.square(x[0] + x[1] - x[2]), axis=1)+1e-10)(embedding_negative_triple)
         loss = K.layers.Lambda(lambda x: K.backend.maximum(x[0] + self.__margin - x[1], 0.0))([score_positive, score_negative])
 
         self.__train_model = K.Model(inputs=[positive_head, positive_relation, positive_tail, negative_head, negative_tail], outputs=loss)
@@ -65,7 +65,7 @@ class TransE:
         embedding_tail = self.__embedding_entity(tail)
         embedding_relation = self.__embedding_relation(relation)
         embedding_triple = [embedding_head, embedding_relation, embedding_tail]
-        loss = K.layers.Lambda(lambda x: K.backend.sqrt(K.backend.sum(K.backend.square(x[0] + x[1] - x[2]), axis=1)))(embedding_triple)
+        loss = K.layers.Lambda(lambda x: K.backend.sum(K.backend.square(x[0] + x[1] - x[2]), axis=1))(embedding_triple)
 
         self.__predict_model = K.Model(inputs=[head, relation, tail], outputs=loss)
         opt = K.optimizers.Adam(lr=self.__learning_rate)
@@ -79,7 +79,7 @@ class TransE:
         embedding_tail = self.__embedding_entity(tail)
         embedding_relation = self.__embedding_relation(relation)
         embedding_triple = [embedding_head, embedding_relation, embedding_tail]
-        loss = K.layers.Lambda(lambda x: K.backend.sqrt(K.backend.sum(K.backend.square(x[0] + x[1] - x[2]), axis=2)))(embedding_triple)
+        loss = K.layers.Lambda(lambda x: K.backend.sum(K.backend.square(x[0] + x[1] - x[2]), axis=2))(embedding_triple)
 
         self.__test_model = K.Model(inputs=[head, relation, tail], outputs=loss)
         opt = K.optimizers.Adam(lr=self.__learning_rate)
